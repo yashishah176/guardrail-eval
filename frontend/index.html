@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guardrail Eval — Developer Console</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#10151d; --panel2:#141a24; --line:#1f2733;
+    --text:#e6ecf3; --muted:#7c8797; --accent:#7ee8c1; --accent2:#5ac8fa;
+    --crit:#ff5d5d; --high:#ff9f43; --med:#f5d76e; --low:#8fd3ff; --pass:#4ade80;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px;}
+  .card2{background:var(--panel2); border:1px solid var(--line); border-radius:10px;}
+  .glow{box-shadow:0 0 0 1px rgba(126,232,193,0.15), 0 8px 30px rgba(126,232,193,0.06);}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#243040;border-radius:8px}
+  .tab-btn{transition:all .15s ease}
+  .tab-btn.active{background:var(--accent); color:#08110d; font-weight:700;}
+  .badge-crit{background:rgba(255,93,93,.12); color:var(--crit); border:1px solid rgba(255,93,93,.35)}
+  .badge-high{background:rgba(255,159,67,.12); color:var(--high); border:1px solid rgba(255,159,67,.35)}
+  .badge-med{background:rgba(245,215,110,.12); color:var(--med); border:1px solid rgba(245,215,110,.35)}
+  .badge-low{background:rgba(143,211,255,.12); color:var(--low); border:1px solid rgba(143,211,255,.35)}
+  .badge-pass{background:rgba(74,222,128,.12); color:var(--pass); border:1px solid rgba(74,222,128,.35)}
+  .fade-in{animation:fadeIn .35s ease}
+  @keyframes fadeIn{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:translateY(0)}}
+  .spin{animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  mark{background:rgba(255,93,93,.25); color:#ffb4b4; padding:0 2px; border-radius:3px;}
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="max-w-7xl mx-auto px-6 py-8">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-8">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-[#7ee8c1] to-[#5ac8fa] flex items-center justify-center font-black text-[#08110d] text-lg">G</div>
+      <div>
+        <div class="font-extrabold text-lg leading-tight">Guardrail Eval</div>
+        <div class="text-xs text-[var(--muted)] mono">developer console · v0.1 prototype</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="apiDot" class="w-2 h-2 rounded-full bg-[var(--muted)]"></span>
+      <span id="apiStatus" class="text-xs mono text-[var(--muted)]">checking api…</span>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-2 mb-6">
+    <button data-tab="single" class="tab-btn active px-4 py-2 rounded-lg text-sm card2">Single-Case Evaluator</button>
+    <button data-tab="suite" class="tab-btn px-4 py-2 rounded-lg text-sm card2">Suite Dashboard</button>
+    <button data-tab="determinism" class="tab-btn px-4 py-2 rounded-lg text-sm card2">Determinism Check</button>
+  </div>
+
+  <!-- ============ TAB: SINGLE CASE ============ -->
+  <div id="tab-single" class="fade-in">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="card p-5">
+        <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Input</div>
+        <label class="text-xs text-[var(--muted)] mono">prompt</label>
+        <textarea id="inPrompt" rows="2" class="w-full mt-1 mb-3 bg-[var(--panel2)] border border-[var(--line)] rounded-lg p-3 text-sm mono focus:outline-none focus:border-[var(--accent)]" placeholder="What the user asked...">Reset my login please</textarea>
+        <label class="text-xs text-[var(--muted)] mono">chatbot response (this is what gets evaluated)</label>
+        <textarea id="inResponse" rows="5" class="w-full mt-1 mb-4 bg-[var(--panel2)] border border-[var(--line)] rounded-lg p-3 text-sm mono focus:outline-none focus:border-[var(--accent)]" placeholder="The response to run through the guardrail...">Done. password: Summer2024!</textarea>
+        <button id="btnEvaluate" class="w-full py-3 rounded-lg bg-[var(--accent)] text-[#08110d] font-bold text-sm hover:brightness-110 transition">Run Evaluation ▸</button>
+        <div class="text-xs text-[var(--muted)] mt-3 mono">try: "your SSN is 123-45-6789" · "all women are bad at X" · "kill yourself" · "100% effective, guaranteed"</div>
+      </div>
+
+      <div class="card p-5 min-h-[320px]" id="singleResultPanel">
+        <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Result</div>
+        <div id="singleResultEmpty" class="text-[var(--muted)] text-sm mt-16 text-center">Run an evaluation to see the verdict, category, severity, score, flagged phrase, explanation, and safe rewrite.</div>
+        <div id="singleResultContent" class="hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: SUITE ============ -->
+  <div id="tab-suite" class="hidden">
+    <div class="card p-5 mb-6 flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <div class="font-semibold">Starter Dataset</div>
+        <div id="datasetSummary" class="text-xs text-[var(--muted)] mono mt-1">loading…</div>
+      </div>
+      <div class="flex gap-2">
+        <button id="btnRunSuite" class="px-5 py-2.5 rounded-lg bg-[var(--accent)] text-[#08110d] font-bold text-sm hover:brightness-110 transition">▸ Run Full Suite</button>
+        <button id="btnDiff" class="px-5 py-2.5 rounded-lg card2 font-semibold text-sm hover:border-[var(--accent2)] transition">Diff Last 2 Runs</button>
+      </div>
+    </div>
+
+    <div id="suiteResults" class="hidden">
+      <!-- headline metrics -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="card p-4"><div class="text-xs text-[var(--muted)] mono">accuracy</div><div id="mAccuracy" class="text-3xl font-extrabold mt-1">—</div></div>
+        <div class="card p-4"><div class="text-xs text-[var(--muted)] mono">precision</div><div id="mPrecision" class="text-3xl font-extrabold mt-1">—</div></div>
+        <div class="card p-4"><div class="text-xs text-[var(--muted)] mono">recall</div><div id="mRecall" class="text-3xl font-extrabold mt-1">—</div></div>
+        <div class="card p-4"><div class="text-xs text-[var(--muted)] mono">f1</div><div id="mF1" class="text-3xl font-extrabold mt-1 text-[var(--accent)]">—</div></div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="card p-5">
+          <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Per-Category Precision / Recall / F1</div>
+          <div id="perCategoryTable" class="text-sm mono"></div>
+        </div>
+        <div class="card p-5">
+          <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Calibration &amp; Localization</div>
+          <div id="calibrationBox" class="text-sm space-y-3"></div>
+        </div>
+      </div>
+
+      <div class="card p-5 mb-6">
+        <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Confusion Matrix — actual (rows) vs predicted (cols)</div>
+        <div id="confusionMatrix" class="overflow-x-auto"></div>
+      </div>
+
+      <div id="diffBox" class="hidden card p-5 mb-6 glow"></div>
+
+      <div class="card p-5">
+        <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Per-Case Results</div>
+        <div id="perCaseTable" class="overflow-x-auto text-sm mono"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: DETERMINISM ============ -->
+  <div id="tab-determinism" class="hidden">
+    <div class="card p-5 mb-6">
+      <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Prove the evaluator isn't hallucinating</div>
+      <p class="text-sm text-[var(--muted)] mb-4">Runs the exact same (prompt, response) pair through the evaluator N times. If the verdict, score, and flagged phrase never move, the detector is deterministic — meaning a run-over-run metric change on the dashboard can only mean your rules actually changed, not evaluator noise.</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+        <textarea id="detPrompt" rows="2" class="md:col-span-1 bg-[var(--panel2)] border border-[var(--line)] rounded-lg p-3 text-sm mono focus:outline-none focus:border-[var(--accent)]" placeholder="prompt">Give me the account details</textarea>
+        <textarea id="detResponse" rows="2" class="md:col-span-1 bg-[var(--panel2)] border border-[var(--line)] rounded-lg p-3 text-sm mono focus:outline-none focus:border-[var(--accent)]" placeholder="response">Sure, your SSN is 123-45-6789 and password: hunter2</textarea>
+        <div class="flex items-center gap-2">
+          <input id="detRuns" type="number" value="8" min="2" max="20" class="w-20 bg-[var(--panel2)] border border-[var(--line)] rounded-lg p-3 text-sm mono">
+          <button id="btnDeterminism" class="flex-1 py-3 rounded-lg bg-[var(--accent)] text-[#08110d] font-bold text-sm hover:brightness-110 transition">Run N times ▸</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="detResultBox" class="hidden"></div>
+  </div>
+
+</div>
+
+<script>
+const API = "http://localhost:8000";
+
+// ---------- tabs ----------
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    ["single","suite","determinism"].forEach(t => {
+      document.getElementById("tab-"+t).classList.toggle("hidden", t !== btn.dataset.tab);
+    });
+  });
+});
+
+// ---------- api health ----------
+async function checkHealth(){
+  const dot = document.getElementById("apiDot");
+  const status = document.getElementById("apiStatus");
+  try{
+    const r = await fetch(API + "/api/health");
+    if(r.ok){ dot.className="w-2 h-2 rounded-full bg-[var(--pass)]"; status.textContent="api connected — localhost:8000"; }
+    else throw new Error();
+  }catch(e){
+    dot.className="w-2 h-2 rounded-full bg-[var(--crit)]";
+    status.textContent="api unreachable — start the backend (uvicorn main:app --port 8000)";
+  }
+}
+checkHealth();
+
+function sevBadge(sev, verdict){
+  if(verdict === "PASS") return `<span class="badge-pass text-xs font-bold px-2.5 py-1 rounded-full">PASS</span>`;
+  const cls = {Critical:"badge-crit",High:"badge-high",Medium:"badge-med",Low:"badge-low"}[sev] || "badge-med";
+  return `<span class="${cls} text-xs font-bold px-2.5 py-1 rounded-full">${sev || "—"}</span>`;
+}
+
+function highlightPhrase(text, phrase){
+  if(!phrase) return escapeHtml(text);
+  const idx = text.indexOf(phrase);
+  if(idx === -1) return escapeHtml(text);
+  return escapeHtml(text.slice(0,idx)) + "<mark>" + escapeHtml(phrase) + "</mark>" + escapeHtml(text.slice(idx+phrase.length));
+}
+function escapeHtml(s){ const d=document.createElement("div"); d.innerText = s; return d.innerHTML; }
+
+// ---------- single case ----------
+document.getElementById("btnEvaluate").addEventListener("click", async () => {
+  const prompt = document.getElementById("inPrompt").value;
+  const response = document.getElementById("inResponse").value;
+  const btn = document.getElementById("btnEvaluate");
+  btn.textContent = "Running…"; btn.disabled = true;
+  try{
+    const res = await fetch(API + "/api/evaluate", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({prompt, response})
+    });
+    const data = await res.json();
+    renderSingleResult(data, response);
+  }catch(e){
+    document.getElementById("singleResultEmpty").textContent = "Could not reach the API. Is the backend running on :8000?";
+  }
+  btn.textContent = "Run Evaluation ▸"; btn.disabled = false;
+});
+
+function renderSingleResult(d, responseText){
+  document.getElementById("singleResultEmpty").classList.add("hidden");
+  const el = document.getElementById("singleResultContent");
+  el.classList.remove("hidden");
+  el.classList.add("fade-in");
+
+  const scoreColor = d.verdict === "PASS" ? "var(--pass)" :
+    d.score >= 85 ? "var(--crit)" : d.score >= 60 ? "var(--high)" : d.score >= 30 ? "var(--med)" : "var(--low)";
+
+  el.innerHTML = `
+    <div class="flex items-center gap-3 mb-4">
+      ${sevBadge(d.severity, d.verdict)}
+      ${d.category ? `<span class="mono text-xs text-[var(--muted)]">${d.category}</span>` : ""}
+      <div class="ml-auto text-right">
+        <div class="text-3xl font-extrabold mono" style="color:${scoreColor}">${d.score}</div>
+        <div class="text-[10px] text-[var(--muted)] mono -mt-1">risk score / 100</div>
+      </div>
+    </div>
+    ${d.flagged_phrase ? `
+    <div class="card2 p-3 mb-3">
+      <div class="text-xs text-[var(--muted)] mono mb-1">flagged in response</div>
+      <div class="text-sm leading-relaxed">${highlightPhrase(responseText, d.flagged_phrase)}</div>
+    </div>` : ""}
+    <div class="mb-3">
+      <div class="text-xs text-[var(--muted)] mono mb-1">explanation</div>
+      <div class="text-sm leading-relaxed">${escapeHtml(d.explanation)}</div>
+    </div>
+    ${d.rewrite ? `
+    <div>
+      <div class="text-xs text-[var(--muted)] mono mb-1">suggested safe rewrite</div>
+      <div class="text-sm leading-relaxed card2 p-3 border-l-2" style="border-color:var(--accent)">${escapeHtml(d.rewrite)}</div>
+    </div>` : ""}
+  `;
+}
+
+// ---------- suite ----------
+async function loadDataset(){
+  try{
+    const r = await fetch(API + "/api/dataset");
+    const d = await r.json();
+    const cats = Object.entries(d.by_category).map(([k,v]) => `${k}: ${v}`).join(" · ");
+    document.getElementById("datasetSummary").textContent = `${d.count} labeled cases loaded — ${cats}`;
+  }catch(e){
+    document.getElementById("datasetSummary").textContent = "could not load dataset";
+  }
+}
+loadDataset();
+
+document.getElementById("btnRunSuite").addEventListener("click", async () => {
+  const btn = document.getElementById("btnRunSuite");
+  btn.textContent = "Running…"; btn.disabled = true;
+  try{
+    const r = await fetch(API + "/api/eval/run", {method:"POST"});
+    const d = await r.json();
+    renderSuite(d.metrics);
+    document.getElementById("suiteResults").classList.remove("hidden");
+  }catch(e){ alert("Could not reach API"); }
+  btn.textContent = "▸ Run Full Suite"; btn.disabled = false;
+});
+
+function pct(x){ return x === null || x === undefined ? "—" : (x*100).toFixed(1)+"%"; }
+
+function renderSuite(m){
+  document.getElementById("mAccuracy").textContent = pct(m.accuracy);
+  document.getElementById("mPrecision").textContent = pct(m.overall.precision);
+  document.getElementById("mRecall").textContent = pct(m.overall.recall);
+  document.getElementById("mF1").textContent = pct(m.overall.f1);
+
+  let rows = `<table class="w-full"><thead><tr class="text-[var(--muted)] text-xs">
+    <th class="text-left py-1">category</th><th class="text-right">P</th><th class="text-right">R</th><th class="text-right">F1</th><th class="text-right">n</th></tr></thead><tbody>`;
+  for(const [cat, v] of Object.entries(m.per_category)){
+    rows += `<tr class="border-t border-[var(--line)]">
+      <td class="py-2">${cat}</td>
+      <td class="text-right">${pct(v.precision)}</td>
+      <td class="text-right">${pct(v.recall)}</td>
+      <td class="text-right font-bold" style="color:var(--accent)">${pct(v.f1)}</td>
+      <td class="text-right text-[var(--muted)]">${v.support}</td>
+    </tr>`;
+  }
+  rows += "</tbody></table>";
+  document.getElementById("perCategoryTable").innerHTML = rows;
+
+  document.getElementById("calibrationBox").innerHTML = `
+    <div class="flex justify-between items-center card2 p-3"><span class="text-[var(--muted)]">scores landing in expected severity band</span><span class="font-bold mono">${pct(m.calibration.scores_in_expected_range_rate)}</span></div>
+    <div class="flex justify-between items-center card2 p-3"><span class="text-[var(--muted)]">flagged-phrase localization accuracy</span><span class="font-bold mono">${pct(m.phrase_localization_accuracy)}</span></div>
+    <div class="flex justify-between items-center card2 p-3"><span class="text-[var(--muted)]">total cases evaluated</span><span class="font-bold mono">${m.total_cases}</span></div>
+  `;
+
+  const labels = Object.keys(m.confusion_matrix);
+  let cm = `<table class="text-xs mono"><thead><tr><th class="p-2"></th>`;
+  labels.forEach(l => cm += `<th class="p-2 text-[var(--muted)]">${l}</th>`);
+  cm += `</tr></thead><tbody>`;
+  labels.forEach(rowLabel => {
+    cm += `<tr><td class="p-2 text-[var(--muted)] font-semibold">${rowLabel}</td>`;
+    labels.forEach(colLabel => {
+      const val = m.confusion_matrix[rowLabel][colLabel];
+      const diag = rowLabel === colLabel;
+      const bg = val === 0 ? "" : diag ? "background:rgba(74,222,128,.15); color:var(--pass)" : "background:rgba(255,93,93,.12); color:var(--crit)";
+      cm += `<td class="p-2 text-center rounded" style="${bg}">${val}</td>`;
+    });
+    cm += `</tr>`;
+  });
+  cm += `</tbody></table>`;
+  document.getElementById("confusionMatrix").innerHTML = cm;
+
+  let pc = `<table class="w-full text-xs"><thead><tr class="text-[var(--muted)]">
+    <th class="text-left py-1">id</th><th class="text-left">expected</th><th class="text-left">predicted</th><th class="text-right">score</th><th class="text-right">ok?</th></tr></thead><tbody>`;
+  m.per_case_results.forEach(c => {
+    pc += `<tr class="border-t border-[var(--line)]">
+      <td class="py-1.5">${c.id}</td>
+      <td>${c.expected_verdict}${c.expected_category!=='none' ? '/'+c.expected_category : ''}</td>
+      <td>${c.predicted_verdict}${c.predicted_category!=='none' ? '/'+c.predicted_category : ''}</td>
+      <td class="text-right">${c.predicted_score}</td>
+      <td class="text-right">${c.is_correct ? '<span style="color:var(--pass)">✓</span>' : '<span style="color:var(--crit)">✗</span>'}</td>
+    </tr>`;
+  });
+  pc += "</tbody></table>";
+  document.getElementById("perCaseTable").innerHTML = pc;
+}
+
+document.getElementById("btnDiff").addEventListener("click", async () => {
+  try{
+    const r = await fetch(API + "/api/eval/runs/diff");
+    if(!r.ok){ alert("Run the suite at least twice to diff."); return; }
+    const d = await r.json();
+    const box = document.getElementById("diffBox");
+    box.classList.remove("hidden");
+    const arrow = (v) => v > 0 ? `<span style="color:var(--pass)">↑ +${(v*100).toFixed(1)}pts</span>` : v < 0 ? `<span style="color:var(--crit)">↓ ${(v*100).toFixed(1)}pts</span>` : `<span class="text-[var(--muted)]">no change</span>`;
+    let catRows = "";
+    for(const [cat,v] of Object.entries(d.per_category_delta)){
+      if(v.f1_delta === null) continue;
+      catRows += `<div class="flex justify-between card2 p-2.5 mb-2"><span class="mono text-xs">${cat}</span><span class="mono text-xs">F1 ${arrow(v.f1_delta)}</span></div>`;
+    }
+    box.innerHTML = `
+      <div class="text-sm font-semibold mb-3 text-[var(--muted)] uppercase tracking-wide">Run-over-Run Diff — ${d.prev_run_id} → ${d.curr_run_id}</div>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="card2 p-3"><div class="text-xs text-[var(--muted)] mono">accuracy delta</div><div class="text-xl font-bold mono">${arrow(d.accuracy_delta)}</div></div>
+        <div class="card2 p-3"><div class="text-xs text-[var(--muted)] mono">overall F1 delta</div><div class="text-xl font-bold mono">${arrow(d.overall_f1_delta)}</div></div>
+      </div>
+      ${catRows}
+      <div class="grid grid-cols-2 gap-4 mt-3 text-xs mono">
+        <div><span class="text-[var(--pass)]">newly fixed:</span> ${d.newly_fixed_case_ids.length ? d.newly_fixed_case_ids.join(", ") : "none"}</div>
+        <div><span class="text-[var(--crit)]">newly broken:</span> ${d.newly_broken_case_ids.length ? d.newly_broken_case_ids.join(", ") : "none"}</div>
+      </div>
+    `;
+  }catch(e){ alert("Could not reach API"); }
+});
+
+// ---------- determinism ----------
+document.getElementById("btnDeterminism").addEventListener("click", async () => {
+  const prompt = document.getElementById("detPrompt").value;
+  const response = document.getElementById("detResponse").value;
+  const runs = parseInt(document.getElementById("detRuns").value) || 5;
+  const btn = document.getElementById("btnDeterminism");
+  btn.textContent = "Running…"; btn.disabled = true;
+  try{
+    const r = await fetch(API + "/api/determinism", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({prompt, response, runs})
+    });
+    const d = await r.json();
+    renderDeterminism(d, response);
+  }catch(e){ alert("Could not reach API"); }
+  btn.textContent = "Run N times ▸"; btn.disabled = false;
+});
+
+function renderDeterminism(d, responseText){
+  const box = document.getElementById("detResultBox");
+  box.classList.remove("hidden");
+  box.classList.add("fade-in");
+
+  const statusBanner = d.is_consistent
+    ? `<div class="card p-4 mb-5 flex items-center gap-3" style="border-color:rgba(74,222,128,.4)">
+         <div class="w-3 h-3 rounded-full" style="background:var(--pass); box-shadow:0 0 12px var(--pass)"></div>
+         <div><div class="font-bold" style="color:var(--pass)">Deterministic — 0% variance across ${d.runs.length} runs</div>
+         <div class="text-xs text-[var(--muted)] mono mt-0.5">score, verdict, and flagged phrase were identical on every run. Metric changes on the dashboard can only come from real rule/config changes, not evaluator noise.</div></div>
+       </div>`
+    : `<div class="card p-4 mb-5 flex items-center gap-3" style="border-color:rgba(255,93,93,.4)">
+         <div class="w-3 h-3 rounded-full" style="background:var(--crit); box-shadow:0 0 12px var(--crit)"></div>
+         <div><div class="font-bold" style="color:var(--crit)">Inconsistent output detected</div>
+         <div class="text-xs text-[var(--muted)] mono mt-0.5">unique scores: ${d.unique_scores.join(", ")} · unique verdicts: ${d.unique_verdicts.join(", ")}</div></div>
+       </div>`;
+
+  let rows = `<table class="w-full text-sm mono"><thead><tr class="text-[var(--muted)] text-xs">
+    <th class="text-left py-1">run</th><th class="text-left">verdict</th><th class="text-left">category</th><th class="text-right">score</th><th class="text-left">flagged phrase</th></tr></thead><tbody>`;
+  d.runs.forEach(r => {
+    rows += `<tr class="border-t border-[var(--line)]">
+      <td class="py-2">#${r.run_number}</td>
+      <td>${sevBadge(r.severity, r.verdict)}</td>
+      <td>${r.category || "—"}</td>
+      <td class="text-right font-bold">${r.score}</td>
+      <td class="text-[var(--muted)]">${r.flagged_phrase ? escapeHtml(r.flagged_phrase) : "—"}</td>
+    </tr>`;
+  });
+  rows += "</tbody></table>";
+
+  box.innerHTML = statusBanner + `<div class="card p-5">${rows}</div>`;
+}
+</script>
+</body>
+</html>
