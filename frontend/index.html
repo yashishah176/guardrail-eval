@@ -86,7 +86,12 @@
   <div id="tab-suite" class="hidden">
     <div class="card p-5 mb-6 flex items-center justify-between flex-wrap gap-3">
       <div>
-        <div class="font-semibold">Starter Dataset</div>
+        <div class="font-semibold flex items-center gap-2">Dataset
+          <select id="datasetSelect" class="card2 text-sm px-2 py-1 rounded">
+            <option value="starter">starter (rules tuned on this)</option>
+            <option value="holdout">held-out (unseen phrasings)</option>
+          </select>
+        </div>
         <div id="datasetSummary" class="text-xs text-[var(--muted)] mono mt-1">loading…</div>
       </div>
       <div class="flex gap-2">
@@ -249,7 +254,7 @@ function renderSingleResult(d, responseText){
 // ---------- suite ----------
 async function loadDataset(){
   try{
-    const r = await fetch(API + "/api/dataset");
+    const r = await fetch(API + "/api/dataset?name=" + document.getElementById("datasetSelect").value);
     const d = await r.json();
     const cats = Object.entries(d.by_category).map(([k,v]) => `${k}: ${v}`).join(" · ");
     document.getElementById("datasetSummary").textContent = `${d.count} labeled cases loaded — ${cats}`;
@@ -258,12 +263,13 @@ async function loadDataset(){
   }
 }
 loadDataset();
+document.getElementById("datasetSelect").addEventListener("change", loadDataset);
 
 document.getElementById("btnRunSuite").addEventListener("click", async () => {
   const btn = document.getElementById("btnRunSuite");
   btn.textContent = "Running…"; btn.disabled = true;
   try{
-    const r = await fetch(API + "/api/eval/run", {method:"POST"});
+    const r = await fetch(API + "/api/eval/run?dataset=" + document.getElementById("datasetSelect").value, {method:"POST"});
     const d = await r.json();
     renderSuite(d.metrics);
     document.getElementById("suiteResults").classList.remove("hidden");

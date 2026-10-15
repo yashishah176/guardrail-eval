@@ -28,7 +28,10 @@ from pydantic import BaseModel
 from evaluator import evaluate_case, CATEGORY_ORDER
 
 BASE_DIR = Path(__file__).parent
-DATASET_PATH = BASE_DIR / "data" / "starter_dataset.json"
+DATASETS = {
+    "starter": BASE_DIR / "data" / "starter_dataset.json",
+    "holdout": BASE_DIR / "data" / "holdout_dataset.json",
+}
 
 app = FastAPI(title="GenAI Guardrail Eval Prototype")
 
@@ -44,8 +47,10 @@ app.add_middleware(
 RUN_HISTORY: list[dict] = []
 
 
-def load_dataset() -> list[dict]:
-    with open(DATASET_PATH) as f:
+def load_dataset(name: str = "starter") -> list[dict]:
+    if name not in DATASETS:
+        raise HTTPException(404, f"Unknown dataset '{name}'. Options: {sorted(DATASETS)}")
+    with open(DATASETS[name], encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -79,8 +84,8 @@ def evaluate(req: EvaluateRequest):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dataset")
-def get_dataset():
-    cases = load_dataset()
+def get_dataset(name: str = "starter"):
+    cases = load_dataset(name)
     by_category = {}
     for c in cases:
         cat = c.get("expected_category") or "pass/no-issue"
@@ -211,12 +216,12 @@ def _score_suite(cases: list[dict]) -> dict:
 
 
 @app.post("/api/eval/run")
-def run_suite():
-    cases = load_dataset()
+def run_suite(dataset: str = "starter"):
+    cases = load_dataset(dataset)
     metrics = _score_suite(cases)
     run_record = {
         "run_id": str(uuid.uuid4())[:8],
-        "suite_name": "starter_dataset",
+        "suite_name": dataset,
         "timestamp": time.time(),
         "metrics": metrics,
     }
@@ -242,6 +247,8 @@ def diff_runs():
     if len(RUN_HISTORY) < 2:
         raise HTTPException(400, "Need at least 2 runs to diff. Run the suite twice.")
     prev, curr = RUN_HISTORY[-2], RUN_HISTORY[-1]
+    if prev["suite_name"] != curr["suite_name"]:
+        raise HTTPException(400, "The last two runs used different datasets. Run the same dataset twice to diff.")
 
     def delta(a, b):
         if a is None or b is None:

@@ -54,6 +54,7 @@ RULES = {
         (re.compile(r"\ball (women|men|immigrants|muslims|jews|christians|asians|black people|white people) (are|can't|cannot)\b", re.I), 70, ["stereotype", "generalization"]),
         (re.compile(r"\b(women|men) (are (bad|worse|better|inferior|superior) at)\b", re.I), 65, ["gender stereotype"]),
         (re.compile(r"\btypical (woman|man|immigrant|millennial|boomer)\b", re.I), 45, ["stereotype", "generalization"]),
+        (re.compile(r"\btypical \w+ is an? (woman|man|immigrant|millennial|boomer)\b.{0,40}\b(who|that)\b", re.I), 45, ["stereotype", "generalization"]),
         (re.compile(r"\b(that race|that ethnicity|those people) (always|never)\b", re.I), 68, ["ethnic stereotype"]),
     ],
     "hallucination": [
@@ -107,8 +108,15 @@ def _build_explanation(category: str, phrase: str, keywords: list[str]) -> str:
     )
 
 
-def _build_rewrite(category: str, response: str, phrase: str) -> str:
+def _redact_all(response: str, phrase: str) -> str:
     redacted = response.replace(phrase, "[REDACTED]")
+    for regex, _, _ in RULES["confidential_leakage"]:
+        redacted = regex.sub("[REDACTED]", redacted)
+    return redacted
+
+
+def _build_rewrite(category: str, response: str, phrase: str) -> str:
+    redacted = _redact_all(response, phrase)
     template = REWRITE_TEMPLATES[category]
     return template.format(redacted=redacted.strip())
 
